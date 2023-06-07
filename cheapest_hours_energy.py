@@ -5,6 +5,12 @@ nordpool_sensor_id = data.get("nordpool_sensor_id", "sensor.nordpool_kwh_krsand_
 calendar_entity_id = data.get("calendar_entity_id", "calendar.electricity")
 cheapest_hours_set_bool = data.get("cheapest_hours_set_bool", "input_boolean.cheapest_hours_set")
 
+# Arguments that define the service, method, and entity to execute on start and end:
+service_to_call = data.get("service_to_call")
+start_method = data.get("start_method")
+end_method = data.get("end_method")
+automate_entity_id = data.get("automate_entity_id")
+
 # Arguments that define the area to search within:
 include_todays_prices = data.get("include_todays_prices", False)
 search_start_hour_flag = data.get("search_start_hour", 0)
@@ -16,8 +22,6 @@ number_of_sequences = data.get("number_of_sequences", 1)
 min_hours_between_sequences = data.get("min_hours_between_sequences", 0)
 
 fail_safe_hour = data.get("fail_safe_hour", 23)
-
-# TODO(ebakke): test and get the "include_todays_prices" feature to work properly
 
 
 # hourlyPricesToSequences takes a list of prices indexed by hour,
@@ -83,17 +87,19 @@ def sequencesOverlap(seq1, seq2):
 # createEventsForSequences takes the entity_id of a calendar
 # and a list of sequences and creates events for those
 def createEventsForSequences(calendar_id, sequences):
+  desc = ":".join([service_to_call, start_method, end_method, automate_entity_id])
+  logger.info("Creating calendar event with description: {}".format(desc))
   for seq, price in sequences:
     hass.services.call("calendar",
                        "create_event",
                        {"entity_id": calendar_id,
                         "start_date_time": str(seq[0]),
                         "end_date_time": str(seq[1]),
-                        "summary": "Sequence average hourly price: {}".format(price)})
+                        "summary": "[Nordpool automation: {}] Average hourly price: {}".format(automate_entity_id, price),
+                        "description": desc})
 
 
 def setCheapestHours():
-  hourly_prices = []
   nordpool_sensor = hass.states.get(nordpool_sensor_id)
   fail_safe_time = datetime.datetime.now().replace(hour=fail_safe_hour, minute=0, second=0, microsecond=0)
 
@@ -102,15 +108,18 @@ def setCheapestHours():
   search_end_hour = search_end_hour_flag
   
   start_date_time = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) + datetime.timedelta(days=1)
+
+  hourly_prices = []
   if nordpool_sensor.attributes.get("tomorrow_valid"):
     hourly_prices = nordpool_sensor.attributes.get("tomorrow")
     if include_todays_prices:
       hourly_prices = nordpool_sensor.attributes.get("today") + hourly_prices
       start_date_time = start_date_time - datetime.timedelta(days=1)
-      search_end_hour = search_end_hour + 24
+      search_end_hour = search_end_hour + len(nordpool_sensor.attributes.get("today"))
   elif fail_safe_time < datetime.datetime.now():
     hourly_prices = [0] * 24
 
+  logger.info("Looking for the cheapest sequences in: {}".format(hourly_prices))
   if len(hourly_prices) != 0:
     sequences = hourlyPricesToSequences(hourly_prices, number_of_sequential_hours, start_date_time)
     sequences = sequences[search_start_hour:search_end_hour+1]
