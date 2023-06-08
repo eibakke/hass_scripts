@@ -26,6 +26,12 @@ automation:
         min_hours_between_sequences: 6
         cheapest_hours_set_bool: 'input_boolean.cheapest_hours_set'
         fail_safe_hour: 23
+    # Make sure this service is the last to be called. Since actions are called in sequence we need this
+    # to run only after all the other automations have succeeded.
+    - service: input_boolean.turn_on
+      data: {}
+      target:
+        entity_id: input_boolean.cheapest_hours_set
     mode: single
 
   # Triggers when a calendar event starts or ends and passes the whole event to the automation script
