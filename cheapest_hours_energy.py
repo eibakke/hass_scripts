@@ -125,7 +125,6 @@ def setCheapestHours():
     sequences = sequences[search_start_hour:search_end_hour+1]
     cheapest_n_seqs = cheapestNSequentialHours(sequences, number_of_sequences, min_hours_between_sequences)
     createEventsForSequences(calendar_entity_id, cheapest_n_seqs)
-    hass.services.call("input_boolean", "turn_on", {"entity_id": cheapest_hours_set_bool})
 
 cheapest_hours_set = hass.states.get(cheapest_hours_set_bool)
 if cheapest_hours_set.state == "off":
