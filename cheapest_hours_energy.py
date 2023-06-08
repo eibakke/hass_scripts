@@ -3,7 +3,6 @@
 # Arguments that have IDs for entities needed:
 nordpool_sensor_id = data.get("nordpool_sensor_id", "sensor.nordpool_kwh_krsand_nok_3_10_025")
 calendar_entity_id = data.get("calendar_entity_id", "calendar.electricity")
-cheapest_hours_set_bool = data.get("cheapest_hours_set_bool", "input_boolean.cheapest_hours_set")
 
 # Arguments that define the service, method, and entity to execute on start and end:
 service_to_call = data.get("service_to_call")
@@ -126,7 +125,5 @@ def setCheapestHours():
     cheapest_n_seqs = cheapestNSequentialHours(sequences, number_of_sequences, min_hours_between_sequences)
     createEventsForSequences(calendar_entity_id, cheapest_n_seqs)
 
-cheapest_hours_set = hass.states.get(cheapest_hours_set_bool)
-if cheapest_hours_set.state == "off":
-  setCheapestHours()
+setCheapestHours()
 
