@@ -8,21 +8,32 @@ The first type of scheduling lets you schedule a certain number of sequences of 
     # To add scheduling for other devices, simple add another call to the cheapest_hours_energy service.
     - service: python_script.cheapest_hours_energy
       data:
+        number_of_sequential_hours: 1
+        number_of_sequences: 3
+        min_hours_between_sequences: 6
         service_to_call: 'switch'
         start_method: 'turn_on'
         end_method: 'turn_off'
         automate_entity_id: 'switch.waterheater'
-        number_of_sequential_hours: 1
-        number_of_sequences: 3
-        min_hours_between_sequences: 6
-        cheapest_hours_set_bool: 'input_boolean.cheapest_hours_set'
-        fail_safe_hour: 23
+```
+
+# In Progress
+## Variable length sequences max hours apart
+Say you'd like to ensure that your waterheater is on at least one hour in every four, and you'd like it to be on for 10 hours a day in total. This could easily lead to variable length sequences. With the configuration below, your water heater will be on for 8 hours a day, and there will be no gap where there is more than 12 hours without the waterheater being on. This means that even if the cheapest 8 hours are all in the early morning, the script will schedule one of the 8 hours such that there is not 12 consecutive hours where the water heater is off. In this case, that means will schedule 7 hours between 0 and 7, and one hour between 12 and 23. The solution is not yet quite optimal and is missing a few features like the option to include today's prices, so this is still in progress for now.
+
+```
+    # To add scheduling for other devices, simple add another call to the python_script.cheapest_non_sequential service.
+    - service: python_script.cheapest_non_sequential
+      data:
+        max_hours_between_sequences: 12
+        number_of_hours: 8
+        service_to_call: switch
+        start_method: turn_on
+        end_method: turn_off
+        automate_entity_id: switch.waterheater
 ```
 
 # Not yet implemented
-
-## Something should be on at least one hour every n hours and at the same time should be on for h hours a day
-Say you'd like to ensure that your waterheater is on at least one hour in every four, and you'd like it to be on for 10 hours a day in total. This could easily lead to variable length sequences.
 
 ## Cheapest percentiles
 Schedule something to be on for the bottom n% of hours. Say, only charge a battery for the 50% cheapest hours of the day.
