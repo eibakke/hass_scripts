@@ -1,0 +1,98 @@
+# Example config for scheduling switches based on the
+# cheapest hours of the day as defined by Nordpool.
+
+automation:
+  # This is the sequence that creates calendar events for the
+  # cheapest hours of the day.
+  - id: 'cheapest_hours_set_sequence'
+    alias: 'Cheapest hours: Set next cheapest sequence'
+    description: 'Runs a number of cheapest_non_sequential.py scripts every hour, one for each service defined in the action section below.'
+    trigger:
+    - platform: time_pattern
+      hours: /1
+    # The actions to be run every hour in this automation. To
+    # automate scheduling for more devices, add another service
+    # section with a call to the same service. You also need to add
+    # a new input_boolean for each service call in order to avoid
+    # the success of one leading to the next not being executed.
+
+    # In this example I've put in two switches that you might want
+    # to use this script for: a waterheater and a carcharger.
+    # Note that the carcharger uses the cheapest_hours_energy.py,
+    # while the waterheater uses the more dynamic version
+    # cheapest_non_sequential.py.
+    action:
+    - service: python_script.cheapest_non_sequential
+      data:
+        service_to_call: 'switch'
+        start_method: 'turn_on'
+        end_method: 'turn_off'
+        automate_entity_id: 'switch.waterheater'
+        number_of_hours: 10
+        max_hours_between_sequences: 6
+        cheapest_hours_set_bool: 'input_boolean.waterheater_scheduled'
+    - service: python_script.cheapest_hours_energy
+      data:
+        service_to_call: 'switch'
+        start_method: 'turn_on'
+        end_method: 'turn_off'
+        automate_entity_id: 'switch.carcharger'
+        number_of_sequences: 3
+        number_of_sequential_hours: 2
+        min_hours_between_sequences: 3 
+        cheapest_hours_set_bool: 'input_boolean.carcharger_scheduled'
+    mode: single
+
+  # All the input_booleans have to be reset so that the next day's
+  # hours will be scheduled. Here this is set to run at 1:15 AM.
+  - id: 'cheapest_hours_clear_set_flag'
+    alias: 'Cheapest hours: Reset the helper booleans for the next day'
+    description: 'Clears cheapest hours helper booleans when the day changes.'
+    trigger:
+    - platform: time
+      at: '01:15:00'
+    condition: []
+    action:
+    - service: input_boolean.turn_off
+      data: {}
+      target:
+        entity_id: input_boolean.waterheater_scheduled
+    - service: input_boolean.turn_off
+      data: {}
+      target:
+        entity_id: input_boolean.carcharger_scheduled
+    mode: single
+
+  # An automation that triggers every time a calendar event starts and ends.
+  # It triggers the calendar_automations.py script and passes the whole
+  # calendar event and HASS event itself to the script as flags. The Python
+  # script then executes the command that is defined in the calendar event
+  # description. You only need one of these for all of your scheduling automations.
+  - id: 'calendar_event_trigger'
+    alias: 'Passes calendar event to script'
+    description: ''
+    trigger:
+    - platform: calendar
+      event: start
+      entity_id: calendar.electricity
+    - platform: calendar
+      event: end
+      entity_id: calendar.electricity
+    action:
+    - service: python_script.calendar_automations
+      data:
+        calendar_event: '{{ trigger.calendar_event }}'
+        event: '{{ trigger.event }}'
+    mode: single 
+
+# This setup requires one input_boolean for each scheduling in the
+# automation section above.
+input_boolean:
+  waterheater_scheduled:
+    name: Cheapest hours scheduled for the waterheater for the next day.
+    icon: mdi:clock
+
+input_boolean:
+  carcharger_scheduled:
+    name: Cheapest hours scheduled for the carcharger for the next day.
+    icon: mdi:clock

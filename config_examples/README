@@ -1,0 +1,1 @@
+This directory contains example configuration files for making the Nordpool scheduling automation scripts work with Homeassistant. A typical directory structure would have the yaml configs in the Homeassistant config directory, and the python scripts in a directory under that, named python_scripts. The example configs are written with this setup in mind.

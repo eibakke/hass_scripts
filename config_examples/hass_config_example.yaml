@@ -1,0 +1,27 @@
+# An example HASS config file for using the Nordpool scheduling setup.
+# Your real config file will likely have many other parts to it, this
+# is just an example showing the parts relevant here.
+
+# Enable Python scripts in ./python_scripts
+python_script:
+
+# Enable logger, this is useful for seeing error messages
+logger:
+  default: info
+
+# Packages
+homeassistant:
+  packages:
+    cheapest_hours: !include nordpool_scheduling_automation_example.yaml
+
+# HACS integrations
+nordpool:
+sensor:
+    - platform: nordpool
+      VAT: True
+      currency: "NOK"
+      # Possible values: "DK1", "DK2", "FI", "LT", "LV", "Oslo", "Kr.sand", "Bergen", "Molde", "Tr.heim", "Tromsø", "SE1", "SE2", "SE3","SE4", "SYS", "EE"
+      region: "Kr.sand"
+      precision: 3
+      price_type: kWh
+
