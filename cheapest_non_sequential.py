@@ -189,7 +189,22 @@ def setCheapestHours():
   createEventsForSequences(calendar_entity_id, schedule)
   hass.services.call("input_boolean", "turn_on", {"entity_id": cheapest_hours_set_bool})
 
+
+# validateFlags raises a ValueError if flags that don't have defaults,
+# but still are required are not set.
+def validateFlags():
+  if service_to_call is None or service_to_call == "":
+    raise ValueError("service_to_call must be set")
+  if start_method is None or start_method == "":
+    raise ValueError("start_method must be set")
+  if end_method is None or end_method == "":
+    raise ValueError("end_method must be set")
+  if automate_entity_id is None or automate_entity_id == "":
+    raise ValueError("automate_entity_id must be set")
+
+
 cheapest_hours_set = hass.states.get(cheapest_hours_set_bool)
 if cheapest_hours_set.state == "off":
+  validateFlags()
   setCheapestHours()
 
