@@ -23,6 +23,8 @@ min_hours_between_sequences = data.get("min_hours_between_sequences", 0)
 
 fail_safe_hour = data.get("fail_safe_hour", 23)
 
+test_run = data.get("test_run", False)
+
 
 # hourlyPricesToSequences takes a list of prices indexed by hour,
 # the length of the sequences to build, and the start_date of the
@@ -99,7 +101,7 @@ def createEventsForSequences(calendar_id, sequences):
                         "description": desc})
 
 
-def setCheapestHours():
+def getHourlyPrices():
   nordpool_sensor = hass.states.get(nordpool_sensor_id)
   fail_safe_time = datetime.datetime.now().replace(hour=fail_safe_hour, minute=0, second=0, microsecond=0)
 
@@ -119,13 +121,24 @@ def setCheapestHours():
   elif fail_safe_time < datetime.datetime.now():
     hourly_prices = [0] * 24
 
-  logger.info("Looking for the cheapest sequences in: {}".format(hourly_prices))
-  if len(hourly_prices) != 0:
-    sequences = hourlyPricesToSequences(hourly_prices, number_of_sequential_hours, start_date_time)
-    sequences = sequences[search_start_hour:search_end_hour+1]
+  if hourly_prices is None or len(hourly_prices) == 0:
+    raise Exception("No prices available yet")
+  
+  sequences = hourlyPricesToSequences(hourly_prices, number_of_sequential_hours, start_date_time)
+  sequences = sequences[search_start_hour:search_end_hour+1]
+  return sequences
+
+
+def setCheapestHours():
+  sequences = getHourlyPrices()
+
+  logger.info("Looking for the cheapest sequences in: {}".format(sequences))
+  if len(sequences) != 0:
     cheapest_n_seqs = cheapestNSequentialHours(sequences, number_of_sequences, min_hours_between_sequences)
-    createEventsForSequences(calendar_entity_id, cheapest_n_seqs)
-    hass.services.call("input_boolean", "turn_on", {"entity_id": cheapest_hours_set_bool})
+    logger.info("Cheapest sequences: {}".format(cheapest_n_seqs))
+    if not test_run:
+      createEventsForSequences(calendar_entity_id, cheapest_n_seqs)
+      hass.services.call("input_boolean", "turn_on", {"entity_id": cheapest_hours_set_bool})
 
 
 # validateFlags raises a ValueError if flags that don't have defaults,
@@ -142,7 +155,7 @@ def validateFlags():
 
 
 cheapest_hours_set = hass.states.get(cheapest_hours_set_bool)
-if cheapest_hours_set.state == "off":
+if cheapest_hours_set.state == "off" or test_run:
   validateFlags()
   setCheapestHours()
 

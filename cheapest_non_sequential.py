@@ -22,12 +22,46 @@ max_hours_between_sequences = data.get("max_hours_between_sequences", 7)
 
 fail_safe_hour = data.get("fail_safe_hour", 23)
 
+test_run = data.get("test_run", False) # when true schedule will be logged and cheapest_hours_set_bool will be ignored
 
-# initialSchedule takes a list of sequences and a number of hours
+# scheduleCheapestHoursInList takes a list of sequences and a number of hours
 # and returns a schedule consisting of the cheapest n hours.
 # A schedule consists of a list of sequences.
-def initialSchedule(sequences, hours):
+def scheduleCheapestHoursInList(sequences, hours):
   return sorted(sequences, key=lambda s: s[1])[:hours]
+
+
+# gapsInSchedule takes a full sequence of hours to make a schedule in and a
+# schedule of hours from the hours in that sequence. It returns the unscheduled
+# hours from that sequence as a list. For example:
+# sequence: [0, 1, 2, 3, 4, 5]
+# schedule: [2, 5]
+# gaps returned: [[0, 1], [3, 4]]
+def gapsInSchedule(sequences, schedule):
+  gaps = []
+  hours_scheduled = sorted([s[0][0].hour for s in schedule])
+
+  i = 0
+  for hr in hours_scheduled:
+    gaps.append(sequences[i:hr])
+    i = hr+1
+
+  if len(hours_scheduled) == 0 or len(sequences) - hours_scheduled[-1] > 0:
+    gaps.append(sequences[i:len(sequences)])
+  return gaps
+
+
+# removeScheduledHours takes a list of sequences and a schedule made up of hours
+# from those sequences and returns a list of hours that does not contain the
+# scheduled hours.
+def removeScheduledHours(sequences, schedule):
+  remaining_hours = []
+  schedule_set = set(schedule)
+  for h in sequences:
+    if h in schedule_set:
+      continue
+    remaining_hours.append(h)
+  return remaining_hours
 
 
 # hourlyPricesToSequences takes a list of prices indexed by hour,
@@ -51,6 +85,9 @@ def minimumHoursToCoverTimespans(timespans, max_gap):
   return len(timespans)//(max_gap+1)
 
 
+# generatePossibleSchedules takes a list of hourly prices and a maximum
+# number of hours where there can be no hours scheduled, and returns
+# all the possible combinations of hours that satisfy the condition.
 def generatePossibleSchedules(sequences, max_gap):
   min_hrs = minimumHoursToCoverTimespans(sequences, max_gap)
   if min_hrs == 0:
@@ -74,6 +111,9 @@ def priceOfSequences(sequences):
   return sum([s[1] for s in sequences])
 
 
+# cheapestPossibleScheduleInSequences takes a list of hourly prices and a
+# maximum number of hours where there can be no hours scheduled, and returns
+# the cheapest sequence of hours.
 def cheapestPossibleScheduleInSequence(seqs, max_gap):
   possible_schedules = generatePossibleSchedules(seqs, max_gap)
   cheapest_price = 999
@@ -93,17 +133,21 @@ def mergeNeighboringSequences(seqs):
   sequential_seqs = []
   merged_seqs = []
   curr_s = seqs[0]
+  sum_p = curr_s[1]
   i = 1
   while i < len(seqs):
     next_s = seqs[i]
     if curr_s[0][1].hour == next_s[0][0].hour:
-      p = (curr_s[1] + next_s[1]) / (next_s[0][1].hour - curr_s[0][0].hour)
-      curr_s = ((curr_s[0][0], next_s[0][1]), p)
+      sum_p = sum_p + next_s[1]
+      curr_s = ((curr_s[0][0], next_s[0][1]), curr_s[1])
     else:
-      merged_seqs.append(curr_s)
+      p = sum_p / (curr_s[0][1].hour - curr_s[0][0].hour)
+      sum_p = next_s[1]
+      merged_seqs.append(((curr_s[0][0], curr_s[0][1]), p))
       curr_s = next_s
     i = i+1
-  merged_seqs.append(curr_s)
+  p = sum_p / (curr_s[0][1].hour - curr_s[0][0].hour)
+  merged_seqs.append(((curr_s[0][0], curr_s[0][1]), p))
   return merged_seqs
 
 
@@ -121,30 +165,58 @@ def createEventsForSequences(calendar_id, sequences):
                         "summary": "[Nordpool automation: {}] Average hourly price: {}".format(automate_entity_id, price),
                         "description": desc})
 
-def setCheapestHours():
+
+def getHourlyPrices():
   nordpool_sensor = hass.states.get(nordpool_sensor_id)
-  hourly_prices = nordpool_sensor.attributes.get("tomorrow")
+  fail_safe_time = datetime.datetime.now().replace(hour=fail_safe_hour, minute=0, second=0, microsecond=0)
+
+  # The Python runtime gets confused about search_start_hour and end_hour looking like local vars not global vars so we just do a little reassignment here.
+  search_start_hour = search_start_hour_flag
+  search_end_hour = search_end_hour_flag
+  
+  start_date_time = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) + datetime.timedelta(days=1)
+
+  hourly_prices = []
+  if nordpool_sensor.attributes.get("tomorrow_valid"):
+    hourly_prices = nordpool_sensor.attributes.get("tomorrow")
+    if include_todays_prices:
+      hourly_prices = nordpool_sensor.attributes.get("today") + hourly_prices
+      start_date_time = start_date_time - datetime.timedelta(days=1)
+      search_end_hour = search_end_hour + len(nordpool_sensor.attributes.get("today"))
+  elif fail_safe_time < datetime.datetime.now():
+    hourly_prices = [0] * 24
+
   if hourly_prices is None or len(hourly_prices) == 0:
     raise Exception("No prices available yet")
-
-  start_date_time = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) + datetime.timedelta(days=1)
+  
   sequences = hourlyPricesToSequences(hourly_prices, start_date_time)
+  return sequences[search_start_hour:search_end_hour+1]
 
-  logger.info("Prices: {}".format(hourly_prices))
+
+def setCheapestHours():
+  sequences = getHourlyPrices()
 
   number_of_hours = number_of_hours_flag
-  min_hours = minimumHoursToCoverTimespans(hourly_prices, max_hours_between_sequences)
+  min_hours = minimumHoursToCoverTimespans(sequences, max_hours_between_sequences)
   if number_of_hours < min_hours:
     logger.warning("Too few hours to cover the day with that gap. Proceeding with the minimum needed: {}".format(min_hours))
     number_of_hours = min_hours
 
+  schedule = []
+  remaining_sequences = sequences
   # These are the hours that are more than what's needed for covering the day
   # They will be placed on the cheapest hours of the day, and this will be the
   # starting point for the rest of the schedule.
   extra_hours = number_of_hours - min_hours
-
-  # First we get the cheapest "extra_hours" hours into our schedule:
-  schedule = initialSchedule(sequences, extra_hours)
+  while extra_hours > 0:
+    # First we get the cheapest "extra_hours" hours into our schedule:
+    schedule.extend(scheduleCheapestHoursInList(remaining_sequences, extra_hours))
+    remaining_sequences = removeScheduledHours(remaining_sequences, schedule)
+    gaps = gapsInSchedule(sequences, schedule)
+    min_hours = 0
+    for g in gaps:
+      min_hours = min_hours + minimumHoursToCoverTimespans(g, max_hours_between_sequences)
+    extra_hours = number_of_hours - len(schedule) - min_hours
 
   # Next we schedule the remaining hours in the gaps that remain from
   # scheduling the cheapest hours, such that no gap is larger than the
@@ -152,42 +224,20 @@ def setCheapestHours():
   hours_scheduled = sorted([s[0][0].hour for s in schedule])
   logger.info("Initial hours_scheduled: {}".format(hours_scheduled))
 
-  i = 0
-  additional_sequences = []
-  for hr in hours_scheduled:
-    seqs = sequences[i:hr]
-    if len(seqs) > max_hours_between_sequences:
-      additional_sequences.extend(cheapestPossibleScheduleInSequence(seqs, max_hours_between_sequences))
-    i = hr+1
-
-  if len(hours_scheduled) == 0 or len(sequences) - hours_scheduled[-1] > max_hours_between_sequences:
-    additional_sequences.extend(cheapestPossibleScheduleInSequence(sequences[i:len(sequences)], max_hours_between_sequences))
-
-  schedule.extend(additional_sequences)
-  hours_scheduled = sorted([s[0][0].hour for s in schedule])
-  logger.info("Schedule: {}".format(hours_scheduled))
-
-  # At this point we have scheduled the cheapest hours, and we know we have no gaps larger than allowed.
-  # However, there may still be some hours left to schedule, depending on how we have done the
-  # scheduling so far. We now place these hours that we have left on the cheapest remaining hours of the
-  # day:
-  if len(schedule) < number_of_hours:
-    remaining_hours = number_of_hours - len(schedule)
-    hours_scheduled_set = set(hours_scheduled)
-    remaining_seqs = [s for s in sequences if s[0][0].hour not in hours_scheduled_set]
-    schedule.extend(sorted(remaining_seqs, key=lambda s: s[1])[:remaining_hours])
+  gaps = gapsInSchedule(sequences, schedule)
+  for gap in gaps:
+    if len(gap) > max_hours_between_sequences:
+      schedule.extend(cheapestPossibleScheduleInSequence(gap, max_hours_between_sequences))
 
   hours_scheduled = sorted([s[0][0].hour for s in schedule])
   logger.info("Final schedule: {}".format(hours_scheduled))
 
-  # TODO(eibakke): This setup does not actually find the optimal solution, because the number of "extra hours" changes after the initial scheduling
-  # an improvement would be to recalculate the number of "extra hours" after the initial scheduling, schedule those on the cheapest hours, and repeat
-  # until there are no more "extra hours".
   schedule = mergeNeighboringSequences(schedule)
   logger.info("Merged schedule: {}".format(schedule))
 
-  createEventsForSequences(calendar_entity_id, schedule)
-  hass.services.call("input_boolean", "turn_on", {"entity_id": cheapest_hours_set_bool})
+  if not test_run:
+    createEventsForSequences(calendar_entity_id, schedule)
+    hass.services.call("input_boolean", "turn_on", {"entity_id": cheapest_hours_set_bool})
 
 
 # validateFlags raises a ValueError if flags that don't have defaults,
@@ -204,7 +254,7 @@ def validateFlags():
 
 
 cheapest_hours_set = hass.states.get(cheapest_hours_set_bool)
-if cheapest_hours_set.state == "off":
+if cheapest_hours_set.state == "off" or test_run:
   validateFlags()
   setCheapestHours()
 
