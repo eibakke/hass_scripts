@@ -91,8 +91,6 @@ input_boolean:
   waterheater_scheduled:
     name: Cheapest hours scheduled for the waterheater for the next day.
     icon: mdi:clock
-
-input_boolean:
   carcharger_scheduled:
     name: Cheapest hours scheduled for the carcharger for the next day.
     icon: mdi:clock
